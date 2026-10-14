@@ -1,0 +1,25 @@
+name: Parking Telegram Bot
+version: "0.1.0"
+slug: parking_bot
+description: Parking snapshots for approved Telegram users
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+options:
+  bot_token: ""
+  admin_chat_id: 509227228
+  camera_entity_id: camera.192_168_31_87
+  start_hour: 6
+  end_hour: 22
+  cache_seconds: 300
+schema:
+  bot_token: password
+  admin_chat_id: int
+  camera_entity_id: str
+  start_hour: "int(0,23)"
+  end_hour: "int(1,24)"
+  cache_seconds: "int(60,3600)"
