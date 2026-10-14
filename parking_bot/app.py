@@ -27,6 +27,7 @@ session = requests.Session()
 cache_lock = Lock()
 cache = {"time": 0.0, "data": None}
 last_message = {}
+last_photo_sent = {}
 BUTTON = {"keyboard": [[{"text": "📸 Що там парковка?"}]], "resize_keyboard": True}
 
 
@@ -150,8 +151,15 @@ def message(msg):
     if now - last_message.get(uid, -9999) < 3:
         return
     last_message[uid] = now
+    if uid in last_photo_sent and cache["data"] is not None:
+        remaining = TTL - (time.monotonic() - cache["time"])
+        if remaining > 0 and last_photo_sent[uid] == cache["time"]:
+            minutes = max(1, int((remaining + 59) // 60))
+            say(uid, f"⏳ Новий знімок буде доступний через {minutes} хв.")
+            return
     try:
         photo(uid)
+        last_photo_sent[uid] = cache["time"]
     except Exception:
         log.exception("Snapshot delivery failed")
         say(uid, "⚠️ Не вдалося отримати знімок. Спробуй пізніше.")
