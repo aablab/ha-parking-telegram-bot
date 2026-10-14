@@ -1,5 +1,5 @@
 name: Parking Telegram Bot
-version: "0.1.1"
+version: "0.1.2"
 slug: parking_bot
 description: Parking snapshots for approved Telegram users
 arch:
