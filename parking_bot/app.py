@@ -88,7 +88,7 @@ def stats_report():
     today = datetime.now(TZ).date().isoformat()
     lines = [f"📊 Парковка — статистика за {today} (Київ)"]
     if not stats:
-        return "\\n".join(lines + ["Поки немає запитів."])
+        return "\n".join(lines + ["Поки немає запитів."])
     for key, entry in sorted(
         stats.items(), key=lambda item: item[1].get("days", {}).get(today, {}).get("requests", 0),
         reverse=True
@@ -100,14 +100,14 @@ def stats_report():
         if username:
             label += " @" + username
         lines.append(
-            f"\\n👤 {label} (ID {key})"
-            f"\\nСьогодні: {d.get('requests', 0)} запитів, {d.get('photos', 0)} фото, "
+            f"\n👤 {label} (ID {key})"
+            f"\nСьогодні: {d.get('requests', 0)} запитів, {d.get('photos', 0)} фото, "
             f"{d.get('repeats', 0)} повторів"
-            f"\\nУсього: {total.get('requests', 0)} запитів, "
+            f"\nУсього: {total.get('requests', 0)} запитів, "
             f"{total.get('photos', 0)} фото, {total.get('repeats', 0)} повторів"
-            f"\\nОстанній запит: {entry.get('last_request', '—')}"
+            f"\nОстанній запит: {entry.get('last_request', '—')}"
         )
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def persist():
