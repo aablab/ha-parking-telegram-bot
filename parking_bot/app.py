@@ -22,6 +22,7 @@ TTL = int(OPTIONS["cache_seconds"])
 TZ = ZoneInfo("Europe/Kyiv")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 DATA = Path("/data/people.json")
+STATS_FILE = Path("/data/stats.json")
 API = "https://api.telegram.org/bot" + TOKEN + "/"
 session = requests.Session()
 cache_lock = Lock()
@@ -44,6 +45,69 @@ def read_people():
 
 people = read_people()
 people["approved"].add(ADMIN)
+
+
+def read_stats():
+    if not STATS_FILE.exists():
+        return {}
+    try:
+        obj = json.loads(STATS_FILE.read_text())
+        if not isinstance(obj, dict):
+            raise ValueError("Expected statistics object")
+        return obj
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("Cannot read statistics; refusing to overwrite") from exc
+
+
+stats = read_stats()
+
+
+def record_stat(uid, user, field):
+    key = str(uid)
+    entry = stats.setdefault(key, {"name": "", "username": "", "total": {}, "days": {}})
+    name = " ".join(filter(None, [user.get("first_name"), user.get("last_name")])).strip()
+    if name:
+        entry["name"] = name[:100]
+    entry["username"] = (user.get("username") or entry.get("username") or "")[:60]
+    day = datetime.now(TZ).date().isoformat()
+    today = entry.setdefault("days", {}).setdefault(day, {})
+    today[field] = today.get(field, 0) + 1
+    totals = entry.setdefault("total", {})
+    totals[field] = totals.get(field, 0) + 1
+    entry["last_request"] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+    # Keep daily counters for the most recent 30 days; lifetime totals remain.
+    days = entry["days"]
+    for old in sorted(days)[:-30]:
+        del days[old]
+    tmp = STATS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(stats, ensure_ascii=False))
+    os.replace(tmp, STATS_FILE)
+
+
+def stats_report():
+    today = datetime.now(TZ).date().isoformat()
+    lines = [f"📊 Парковка — статистика за {today} (Київ)"]
+    if not stats:
+        return "\\n".join(lines + ["Поки немає запитів."])
+    for key, entry in sorted(
+        stats.items(), key=lambda item: item[1].get("days", {}).get(today, {}).get("requests", 0),
+        reverse=True
+    ):
+        d = entry.get("days", {}).get(today, {})
+        total = entry.get("total", {})
+        label = entry.get("name") or "Користувач"
+        username = entry.get("username")
+        if username:
+            label += " @" + username
+        lines.append(
+            f"\\n👤 {label} (ID {key})"
+            f"\\nСьогодні: {d.get('requests', 0)} запитів, {d.get('photos', 0)} фото, "
+            f"{d.get('repeats', 0)} повторів"
+            f"\\nУсього: {total.get('requests', 0)} запитів, "
+            f"{total.get('photos', 0)} фото, {total.get('repeats', 0)} повторів"
+            f"\\nОстанній запит: {entry.get('last_request', '—')}"
+        )
+    return "\\n".join(lines)
 
 
 def persist():
@@ -135,6 +199,12 @@ def message(msg):
         persist()
         say(uid, f"Доступ відкликано: {target}")
         return
+    if txt.split(maxsplit=1)[0].split("@")[0] == "/stats" and uid == ADMIN:
+        report = stats_report()
+        # Telegram messages cannot exceed 4096 characters.
+        for start in range(0, len(report), 3800):
+            say(uid, report[start:start + 3800])
+        return
     if txt.startswith("/users") and uid == ADMIN:
         say(uid, "Схвалені ID:\n" + "\n".join(map(str, sorted(people["approved"]))))
         return
@@ -144,22 +214,27 @@ def message(msg):
     if txt != "📸 Що там парковка?":
         welcome(uid)
         return
+    user = msg.get("from") or {"id": uid}
+    record_stat(uid, user, "requests")
     if not open_now():
         say(uid, "🌙 Знімки доступні з 06:00 до 22:00 за Києвом.")
         return
     now = time.monotonic()
     if now - last_message.get(uid, -9999) < 3:
+        record_stat(uid, user, "repeats")
         return
     last_message[uid] = now
     if uid in last_photo_sent and cache["data"] is not None:
         remaining = TTL - (time.monotonic() - cache["time"])
         if remaining > 0 and last_photo_sent[uid] == cache["time"]:
+            record_stat(uid, user, "repeats")
             minutes = max(1, int((remaining + 59) // 60))
             say(uid, f"⏳ Новий знімок буде доступний через {minutes} хв.")
             return
     try:
         photo(uid)
         last_photo_sent[uid] = cache["time"]
+        record_stat(uid, user, "photos")
     except Exception:
         log.exception("Snapshot delivery failed")
         say(uid, "⚠️ Не вдалося отримати знімок. Спробуй пізніше.")
